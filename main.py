@@ -28,7 +28,22 @@ class Config:
 
 
 def process_mailbox(imapmail):
-    result, data = imapmail.search(None, '(FROM "lis.kostiantyn@gmail.com" SUBJECT "Home assignment")')
+    try:
+        result, data = imapmail.search(None, '(FROM "lis.kostiantyn@gmail.com" SUBJECT "Home assignment")')
+    except Exception as e:
+        imapmail = imaplib.IMAP4_SSL("imap.gmail.com")
+        try:
+            result, data = mail.login(Config.email_account, Config.email_pass)
+        except imaplib.IMAP4.error:
+            print("\nLOGIN FAILED!!!\n")
+            bot.send_message(chat_id=Config.creator_id, text="Login failed!")
+            return False, "", ""
+
+        imapmail.list()
+        imapmail.select("INBOX")
+        result, data = imapmail.search(None, '(FROM "lis.kostiantyn@gmail.com" SUBJECT "Home assignment")')
+
+
     if result != 'OK':
         print("No messages found!")
         return
