@@ -8,6 +8,7 @@ import logging
 from telegram.ext import Updater
 from telegram.ext import CommandHandler
 from telegram import ParseMode
+from telegram import Bot
 
 
 class Status:
@@ -19,8 +20,11 @@ class Status:
 class Config:
     email_account = "tef.tr62@gmail.com"
     last_email_num = 200
-    chat_id = "394589765"
-    creator_username = "Samilton"
+    chat_id = "000000000" # chat id, to where home assignment will be sended
+    creator_username = "Samilton" # username of main admin/creator of bot, write it without '@'
+    creator_id = "000000000" # chat id, of main admin/creator of bot
+    token = "000000000:AAAAAAAAA-aaaaaaaaaaaaaaaaaaaaa0000" # telegram bot token, you can take it from Bot Father
+    email_pass = "1234567890" # email password
 
 
 def process_mailbox(imapmail):
@@ -95,7 +99,7 @@ def process_mailbox(imapmail):
 
 
 def start(bot, update):
-    bot.send_message(chat_id=update.message.chat_id,
+    bot.send_message(chat_id=update.message.chat_id, parse_mode=ParseMode.MARKDOWN,
                      text="I'm an English Home Assignment bot. I can notify you or group/channel about new english "
                           "home assignment from gmail box.\n\n"
 
@@ -109,7 +113,10 @@ def start(bot, update):
                           "/stopchecking - Stop auto checking email\n"
                           "/setchatid - Set chat ID, where home assignment will be displayed\n"
                           "/setlastnum - Set last sended email number\n"
-                          "/setinterval - Set interval between auto checking\n")
+                          "/setinterval - Set interval between auto checking\n\n"
+
+                          "My creator is - @Samilton\n"
+                          "[My code on GitHub](https://github.com/Oradle/GmailToTelegramBot)")
 
 
 def start_checking(bot, update, job_queue):
@@ -149,7 +156,8 @@ def check_email_manually(bot, update):
         Status.last_subject = subject
     else:
         bot.send_message(chat_id=update.message.chat_id, text="Nothing new. The last one was:")
-        bot.send_message(chat_id=update.message.chat_id, text='*' + Status.last_subject + '*' + "\n\n" + Status.last_body,
+        bot.send_message(chat_id=update.message.chat_id,
+                         text='*' + Status.last_subject + '*' + "\n\n" + Status.last_body,
                          parse_mode=ParseMode.MARKDOWN)
 
 
@@ -174,7 +182,7 @@ def set_last_email_num(bot, update, args):
     if update.message.from_user['username'] == Config.creator_username:
         Config.last_email_num = int(args[0])
         bot.send_message(chat_id=update.message.chat_id, text="Last email number successfully changed")
-        print("\nLast email number was changed to " + str(Config.last_email_num)+ "\n")
+        print("\nLast email number was changed to " + str(Config.last_email_num) + "\n")
     else:
         bot.send_message(chat_id=update.message.chat_id,
                          text="You aren't my creator, ask my creator - @" + Config.creator_username + " to do this")
@@ -193,7 +201,8 @@ def set_checking_interval(bot, update, job_queue, args):
 def email_checking_callback(bot, job):
     success, subject, body = process_mailbox(mail)
     if success:
-        bot.send_message(chat_id=Config.chat_id, text='*' + subject + '*' + "\n\n" + body,
+        bot.send_message(chat_id=Config.chat_id,
+                         text='*' + subject + '*' + "\n\n" + body + "\n\n_via_ @EnglishHomeAssignmentBot",
                          parse_mode=ParseMode.MARKDOWN)
 
         Status.last_body = body
@@ -205,27 +214,28 @@ def email_checking_callback(bot, job):
 Config()
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.DEBUG)
 
-print("Enter bot token: ")
-updater = Updater(sys.stdin.readline().rstrip())
+updater = Updater(Config.token)
 dispatcher = updater.dispatcher
 job_queue = updater.job_queue
+bot = Bot(Config.token)
 
 mail = imaplib.IMAP4_SSL('imap.gmail.com')
 
 try:
-    print("Enter email password: ")
-    result, data = mail.login(Config.email_account, sys.stdin.readline().rstrip())
+    result, data = mail.login(Config.email_account, Config.email_pass)
 except imaplib.IMAP4.error:
     print("LOGIN FAILED!!! ")
     sys.exit(1)
 
 print(result, data)
 print("Processing mailbox...\n")
+bot.send_message(chat_id=Config.creator_id, text="Boot loading...")
 
 mail.list()
 mail.select("INBOX")
 
-email_checking_job = job_queue.run_repeating(email_checking_callback, interval=15, first=0, name="email_checking")  # 900
+email_checking_job = job_queue.run_repeating(email_checking_callback, interval=15, first=0,
+                                             name="email_checking")  # 900
 
 start_handler = CommandHandler('start', start)
 dispatcher.add_handler(start_handler)
@@ -248,9 +258,9 @@ dispatcher.add_handler(set_chat_id_handler)
 set_last_email_num_handler = CommandHandler('setlastnum', set_last_email_num, pass_args=True)
 dispatcher.add_handler(set_last_email_num_handler)
 
-set_checking_interval_handler = CommandHandler('setinterval', set_checking_interval, pass_job_queue=True, pass_args=True)
+set_checking_interval_handler = CommandHandler('setinterval', set_checking_interval, pass_job_queue=True,
+                                               pass_args=True)
 dispatcher.add_handler(set_checking_interval_handler)
-
 
 job_queue.start()
 updater.start_polling()
