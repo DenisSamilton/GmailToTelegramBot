@@ -9,6 +9,8 @@ from telegram.ext import Updater
 from telegram.ext import CommandHandler
 from telegram import ParseMode
 from telegram import Bot
+from oauth2 import GenerateOAuth2String
+from oauth2 import RefreshToken
 
 
 class Status:
@@ -19,30 +21,41 @@ class Status:
 
 class Config:
     email_account = "tef.tr62@gmail.com"
+    google_client_id = "000000000000.apps.googleusercontent.com"
+    google_client_secret = "aAaAaAaAAaAAA0_A-0AaAaAaA"
+    google_refresh_token = "1/aAaAaAaAAaAAA0-aAaAaAaAAaAAA0aAaAaAaAAaAAA0"
     last_email_num = 200
-    chat_id = "000000000" # chat id, to where home assignment will be sended
-    creator_username = "Samilton" # username of main admin/creator of bot, write it without '@'
-    creator_id = "000000000" # chat id, of main admin/creator of bot
-    token = "000000000:AAAAAAAAA-aaaaaaaaaaaaaaaaaaaaa0000" # telegram bot token, you can take it from Bot Father
-    email_pass = "1234567890" # email password
+    chat_id = "000000000"  # chat id, to where home assignment will be sent
+    creator_username = "Samilton"  # username of main admin/creator of bot, write it without '@'
+    creator_id = "000000000"  # chat id, of main admin/creator of bot
+    token = "000000000:AAAAAAAAA-aaaaaaaaaaaaaaaaaaaaa0000"  # telegram bot token, you can take it from Bot Father
 
 
-def process_mailbox(imapmail):
+# Global vars
+bot = Bot(Config.token)
+mail = imaplib.IMAP4_SSL('imap.gmail.com')
+
+
+def process_mailbox():
+    global mail
     try:
-        result, data = imapmail.search(None, '(FROM "lis.kostiantyn@gmail.com" SUBJECT "Home assignment")')
-    except Exception as e:
-        imapmail = imaplib.IMAP4_SSL("imap.gmail.com")
+        result, data = mail.search(None, '(FROM "lis.kostiantyn@gmail.com" SUBJECT "Home assignment")')
+    except imaplib.IMAP4.error as exc:
+        print("\nSearching failed!!! Error:", exc, "\n")
         try:
-            result, data = mail.login(Config.email_account, Config.email_pass)
-        except imaplib.IMAP4.error:
-            print("\nLOGIN FAILED!!!\n")
+            mail = imaplib.IMAP4_SSL('imap.gmail.com')
+            mail.debug = 4
+            response = RefreshToken(Config.google_client_id, Config.google_client_secret, Config.google_refresh_token)
+            auth_string = GenerateOAuth2String(Config.email_account, response['access_token'], base64_encode=False)
+            mail.authenticate('XOAUTH2', lambda x: auth_string)
+        except imaplib.IMAP4.error as exc:
+            print("\nLOGIN FAILED!!! Error:", exc, "\n")
             bot.send_message(chat_id=Config.creator_id, text="Login failed!")
             return False, "", ""
 
-        imapmail.list()
-        imapmail.select("INBOX")
-        result, data = imapmail.search(None, '(FROM "lis.kostiantyn@gmail.com" SUBJECT "Home assignment")')
-
+        mail.list()
+        mail.select("INBOX")
+        result, data = mail.search(None, '(FROM "lis.kostiantyn@gmail.com" SUBJECT "Home assignment")')
 
     if result != 'OK':
         print("No messages found!")
@@ -52,7 +65,7 @@ def process_mailbox(imapmail):
         if int(num) <= Config.last_email_num:
             continue
 
-        result, data = imapmail.fetch(num, '(RFC822)')
+        result, data = mail.fetch(num, '(RFC822)')
         if result != 'OK':
             print("\n\nERROR: getting message №", num, "\n\n")
             continue
@@ -63,7 +76,6 @@ def process_mailbox(imapmail):
             print("\n\nERROR: making message\n\n")
             continue
 
-        hdr = ""
         try:
             hdr = email.header.make_header(email.header.decode_header(msg['Subject']))
             subject = str(hdr)
@@ -161,7 +173,7 @@ def stop_checking(bot, update, job_queue):
 
 
 def check_email_manually(bot, update):
-    success, subject, body = process_mailbox(mail)
+    success, subject, body = process_mailbox()
     if success:
         bot.send_message(chat_id=Config.chat_id, text='*' + subject + '*' + "\n\n" + body,
                          parse_mode=ParseMode.MARKDOWN)
@@ -214,7 +226,7 @@ def set_checking_interval(bot, update, job_queue, args):
 
 
 def email_checking_callback(bot, job):
-    success, subject, body = process_mailbox(mail)
+    success, subject, body = process_mailbox()
     if success:
         bot.send_message(chat_id=Config.chat_id,
                          text='*' + subject + '*' + "\n\n" + body + "\n\n_via_ @EnglishHomeAssignmentBot",
@@ -226,56 +238,60 @@ def email_checking_callback(bot, job):
         print("\nNothing new\n")
 
 
-Config()
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.DEBUG)
+def main():
+    logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.DEBUG)
 
-updater = Updater(Config.token)
-dispatcher = updater.dispatcher
-job_queue = updater.job_queue
-bot = Bot(Config.token)
+    updater = Updater(Config.token)
+    dispatcher = updater.dispatcher
+    job_queue = updater.job_queue
 
-mail = imaplib.IMAP4_SSL('imap.gmail.com')
+    global mail
+    try:
+        mail = imaplib.IMAP4_SSL('imap.gmail.com')
+        mail.debug = 4
+        response = RefreshToken(Config.google_client_id, Config.google_client_secret, Config.google_refresh_token)
+        auth_string = GenerateOAuth2String(Config.email_account, response['access_token'], base64_encode=False)
+        mail.authenticate('XOAUTH2', lambda x: auth_string)
+    except imaplib.IMAP4.error as exc:
+        print("\nLOGIN FAILED!!! Error:", exc, "\n")
+        sys.exit(1)
 
-try:
-    result, data = mail.login(Config.email_account, Config.email_pass)
-except imaplib.IMAP4.error:
-    print("LOGIN FAILED!!! ")
-    sys.exit(1)
+    print("Processing mailbox...\n")
+    bot.send_message(chat_id=Config.creator_id, text="Bot loading...")
 
-print(result, data)
-print("Processing mailbox...\n")
-bot.send_message(chat_id=Config.creator_id, text="Boot loading...")
+    mail.list()
+    mail.select("INBOX")
 
-mail.list()
-mail.select("INBOX")
+    job_queue.run_repeating(email_checking_callback, interval=15, first=0, name="email_checking")  # 900
 
-email_checking_job = job_queue.run_repeating(email_checking_callback, interval=15, first=0,
-                                             name="email_checking")  # 900
+    start_handler = CommandHandler('start', start)
+    dispatcher.add_handler(start_handler)
 
-start_handler = CommandHandler('start', start)
-dispatcher.add_handler(start_handler)
+    stop_checking_handler = CommandHandler('stopchecking', stop_checking, pass_job_queue=True)
+    dispatcher.add_handler(stop_checking_handler)
 
-stop_checking_handler = CommandHandler('stopchecking', stop_checking, pass_job_queue=True)
-dispatcher.add_handler(stop_checking_handler)
+    start_checking_handler = CommandHandler('startchecking', start_checking, pass_job_queue=True)
+    dispatcher.add_handler(start_checking_handler)
 
-start_checking_handler = CommandHandler('startchecking', start_checking, pass_job_queue=True)
-dispatcher.add_handler(start_checking_handler)
+    check_email_manually_handler = CommandHandler('check', check_email_manually)
+    dispatcher.add_handler(check_email_manually_handler)
 
-check_email_manually_handler = CommandHandler('check', check_email_manually)
-dispatcher.add_handler(check_email_manually_handler)
+    check_job_status_handler = CommandHandler('status', check_job_status)
+    dispatcher.add_handler(check_job_status_handler)
 
-check_job_status_handler = CommandHandler('status', check_job_status)
-dispatcher.add_handler(check_job_status_handler)
+    set_chat_id_handler = CommandHandler('setchatid', set_chat_id, pass_args=True)
+    dispatcher.add_handler(set_chat_id_handler)
 
-set_chat_id_handler = CommandHandler('setchatid', set_chat_id, pass_args=True)
-dispatcher.add_handler(set_chat_id_handler)
+    set_last_email_num_handler = CommandHandler('setlastnum', set_last_email_num, pass_args=True)
+    dispatcher.add_handler(set_last_email_num_handler)
 
-set_last_email_num_handler = CommandHandler('setlastnum', set_last_email_num, pass_args=True)
-dispatcher.add_handler(set_last_email_num_handler)
+    set_checking_interval_handler = CommandHandler('setinterval', set_checking_interval, pass_job_queue=True,
+                                                   pass_args=True)
+    dispatcher.add_handler(set_checking_interval_handler)
 
-set_checking_interval_handler = CommandHandler('setinterval', set_checking_interval, pass_job_queue=True,
-                                               pass_args=True)
-dispatcher.add_handler(set_checking_interval_handler)
+    job_queue.start()
+    updater.start_polling()
 
-job_queue.start()
-updater.start_polling()
+
+if __name__ == "__main__":
+    main()
